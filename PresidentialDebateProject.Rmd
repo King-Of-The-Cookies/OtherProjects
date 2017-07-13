@@ -1,0 +1,129 @@
+---
+title: "PresidentialDebateProject"
+output: html_document
+---
+##load data
+```{r}
+setwd("~/Documents/BISS/R programming/PresidentialDebateLDA")
+raw_data <- read.csv("sentencesDebate2.csv", stringsAsFactors = FALSE, header = FALSE)
+#raw_data <- raw_data[,1:3]
+
+library(syuzhet)
+syuzhetSentiment <- as.data.frame(get_sentiment(raw_data$V1))
+colnames(syuzhetSentiment) <- "sentiment"
+syuzhetSentiment$sentence <- seq_along(syuzhetSentiment$sentiment)
+library(ggplot2)
+ggplot(syuzhetSentiment, aes(x=sentiment)) + geom_histogram(binwidth = 0.6)
+mean(syuzhetSentiment$sentiment)
+ggplot(syuzhetSentiment, aes(x=sentence, y=sentiment)) + geom_line()
+#write.csv(sentencesComplete, file = "sentencesDebate.csv")
+#raw_data <- as.data.frame(sentencesComplete)
+colnames(raw_data) <- "Text"
+
+```
+
+
+
+##load data
+```{r}
+setwd("~/Documents/BISS/R programming/PresidentialDebateLDA")
+raw_data <- read.csv("newsentencesDebate.csv", stringsAsFactors = FALSE, header = FALSE)
+#raw_data <- raw_data[,1:3]
+#raw_data <- raw_data[-(grep("Holt",raw_data$Speaker)),]
+
+#library(syuzhet)
+#sentencesComplete <- vector(mode = "character")
+#position = 1
+#for(i in 1:length(raw_data$Text)){
+#  sentences <- get_sentences(raw_data[i,3])
+#  sentencesComplete[position:(length(sentences)+position-1)] <- sentences
+#  position = position + length(sentences)
+#}
+
+#write.csv(sentencesComplete, file = "sentencesDebate.csv")
+#raw_data <- as.data.frame(sentencesComplete)
+colnames(raw_data) <- "Text"
+
+```
+##Data cleaning
+```{r}
+library(tm)
+library(SnowballC)
+
+
+features <- read.csv("features2.csv", header = FALSE)
+features$V1 <- gsub("\\W+", "", features$V1)
+
+
+
+corpus <- VCorpus(VectorSource(raw_data$Text))
+
+
+corpus <- tm_map(corpus, removeNumbers)
+corpus <- tm_map(corpus, removePunctuation)
+
+corpus <- tm_map(corpus, content_transformer(tolower))
+corpus <- tm_map(corpus, PlainTextDocument)
+#corpus <- tm_map(corpus, removeWords, !features$ability..)
+
+corpus <- tm_map(corpus, removeWords, stopwords("en"))
+
+corpus <- tm_map(corpus, stemDocument)
+
+#dtm <- DocumentTermMatrix(corpus, control = list(weightTfIdf(dtm)))
+
+dtm <- DocumentTermMatrix(corpus,
+           control = list(weighting = function(x) weightTfIdf(x, normalize = FALSE)))
+
+dtm <- dtm[, which(colnames(dtm) %in% features$V1)]
+
+removeIndexes <- which(apply(dtm, 1, sum)==0)
+dtm <- dtm[-(removeIndexes),]
+corpus <- corpus[-(removeIndexes)]
+
+```
+#LDA
+```{r}
+library(ldatuning)
+#quanteda
+nr_topics <- FindTopicsNumber(dtm, topics = seq(2, 15, by = 1), mc.cores = 3L, metrics = c("Griffiths2004", "CaoJuan2009", "Arun2010", "Deveaud2014"))
+FindTopicsNumber_plot(nr_topics)
+```
+
+```{r}
+library(topicmodels)
+lda_output <- LDA(dtm, k = 4, method = "Gibbs",
+control = list(seed = 77))
+lda_probabilities <- posterior(lda_output)
+term_probability <- as.data.frame(lda_probabilities$terms)
+term_probability <- as.data.frame(t(term_probability))
+document_probabilities <- as.data.frame(lda_probabilities$topics)
+```
+
+###Visualize LDA
+```{r, results=FALSE}
+library(LDAvis)
+library(servr)
+source("TopicModelsLDAVis.R")
+lda_visualized <- serVis(topicmodels_json_ldavis(lda_output, corpus, dtm))
+library(wordcloud)
+#topic1
+findAssocs(dataset_cleaned_dtm, c("tri", "problem", "server", "issu", "error"), 0.2)
+#there is an annoying popup, and it is difficult to get good support (read the comments), and there are some intallation issues
+
+#topic2
+findAssocs(dataset_cleaned_dtm, c("plugin", "work", "total", "problem", "issu", "solv"), 0.2)
+#issues/problems with plugin which seem to have been solved    word2vec
+
+#topic3
+findAssocs(dataset_cleaned_dtm, c("site", "speed", "plugin"), 0.2)
+#the use of the plugin improves loading time (without plugin site would be slower), again technical issues pop up
+
+corpus_df <- as.data.frame(unlist(sapply(dataset_cleaned_corpus, '[', "content")))
+colnames(corpus_df) <- "V1"
+support_comments <- as.data.frame(dataset_raw[grep("site", dataset_raw$Content),"Content"])
+support_comments
+```
+
+
+
