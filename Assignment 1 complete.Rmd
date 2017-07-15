@@ -1,0 +1,134 @@
+---
+title: 'Return on Marketing: Assignment 1'
+author: "Guy Simons"
+output:
+  html_document: default
+  pdf_document: default
+  word_document: default
+---
+
+```{r loading & cleaning the dataset, message=FALSE, warning=FALSE, error=FALSE}
+library(foreign)
+data_raw <- as.data.frame(read.spss(file.path(getwd(), "Source files", "Assignment 1 raw.sav")))
+library(plyr)
+data_raw$MONTH <- revalue(as.factor(data_raw$MONTH), c("1" = "January", "2" = "February", "3" = "March", "4" = "April", "5" = "May", "6" = "June", "7" = "July", "8" = "August", "9" = "September", "10" = "October", "11" = "November", "12" = "December"))
+colnames(data_raw) <- tolower(colnames(data_raw))
+data_clean <- data_raw
+```
+
+###Getting to know the data
+The purpose of this code block is to provide summary statistics for all variables in the dataset. In addition, graphs are presented to visualize which type of advertising is used most and to visualize the relationship between print advertising and sales. 
+
+```{r Getting to know the data, message=FALSE, warning=FALSE, error=FALSE}
+library(psych)
+library(dplyr)
+describe(select(data_clean, sales, adbudg, print, newspap, tvradio), skew = FALSE)
+data_clean$period <- seq_along(data_clean$month)
+library(ggplot2)
+stacked_data <- stack(data_clean)
+
+
+ggplot(filter(stacked_data, ind != "sales" & ind != "adbudg" & ind != "period"), aes(x=ind, y=values, fill = ind)) + stat_summary(fun.y = mean, geom = "bar") + stat_summary(fun.data = mean_cl_normal, geom = "errorbar", width = 0.2) +labs(title = "Means Advertising Expenditures", x= "Advertising Category", y= "US Dollars") + theme(legend.position = "none")
+
+ggplot(data_clean, aes(x = print, y = sales)) + geom_point(aes(colour = month)) + geom_smooth(method = "lm") + labs(title = "Scatterplot Sales & Print Advertising", x = "Print Advertising", y = "Sales", colour = "Months")
+
+stacked_data_sales_adbudg <- filter(stacked_data, ind == "print" | ind == "sales")
+stacked_data_sales_adbudg$period <- rep(seq(from = 1, to = 76, by = 1), times = 2)
+ggplot(stacked_data_sales_adbudg, aes(x = period, y = values)) + geom_line() + facet_wrap(~ind, nrow = 2, scales = "free") + geom_smooth(method = "lm") + labs(x="Periods", y = "US Dollars")
+
+```
+
+There is a total of 76 recorded months in the dataset. This means that the timespan encompasses 6 years and 4 months. The total advertising budget (ADBUDG) is divided into print, newspaper and TV/radio. Home Improvement spent significantly more of its advertising budget on print, followed by TV/radio and newspaper. Based on the Standard Deviation, the highest fluctuation in advertising budget occurred for TV/radio. Furthermore, from this output it can be observed that Home Improvement did not always spend money on TV/radio or newspaper advertising.
+
+It is expected that an increase in print advertising leads to a positive increase in sales, which is confirmed by the scatterplot. Furthermore, when examining this scatterplot more closely, it can be observed that this linear relationship is less strong above an advertising budget of 1 million as indicated by a widening of the 95% confidence interval (the shaded area around the regression line). Furthermore, there is no clear pattern in advertising spending and sales across the months of the year.
+
+###Advertising elasticities
+The purpose of this code block is to express the effectiveness of print advertising on sales as an elasticity. To do this a linear model is built after transforming the advertising variables to a log scale. 
+```{r Advertising Elasticities, message=FALSE, warning=FALSE, error=FALSE}
+data_clean$ln_sales <- log(data_clean$sales)
+data_clean$ln_adbudg <- log(data_clean$adbudg + 1)
+data_clean$ln_print <- log(data_clean$print + 1)
+data_clean$ln_newspap <- log(data_clean$newspap + 1)
+data_clean$ln_tvradio <- log(data_clean$tvradio + 1)
+
+model_print <- lm(ln_sales ~ ln_print, data = data_clean)
+summary(model_print)
+```
+
+To assess the fit of the model the R-square and the significance of the F-statistic are observed. The regression model has a R-square of 0.423 which is relatively high. This means that 42.3% of the variance in sales can be explained by the print variable. Furthermore, it can be observed that the F-statistic is significant which essentially means that using this regression model is a significant improvement over using the mean of sales as a model. Also, the coefficient for the print variable is significant (p < 0.05). This means that the print variable contributes significantly to the predictive power of the regression model. Furthermore, the print-sales elasticity has a value of 0.308, which means a 1% increase in print leads to 0.308% in sales. This means that print advertising is an effective marketing tool.
+Based on the article of Sethuraman et al. (2011), the majority (over 40% short-term, over than 28% long-term) of the advertising elasticities in the meta-analysis are between 0 and 0.05. Therefore, an advertising elasticity of 0.308 is high. However, this can be attributed to the fact that the simple linear regression model does not control for any other factors which might decrease the elasticity.
+
+###Adding control variables
+To improve the model, and to enhance the estimated elasticities, environmental factors that could affect the output measure are added to the model. These environmental factors are: long- term trend and season of the year. Furthermore, the other marketing variables are added into the regression model. 
+
+The variable periods (long-term trend) is a sequence from 1 to 76, which are the number of months provided in the dataset. The variable Season consists of 4 variables with autumn as the base variable. Specifically, the months were coded as follows: Sep. – Nov. as Autumn, Dec. - Feb. as Winter, Mar. - May as Spring and Jun. – Aug. as Summer. This results in 3 dummy variables that are included in the regression model. In addition, the variables newspaper advertising and TV/radio advertising were added in the model. In order to be able to transform the newspaper and TV/radio into their logarithmic form, the value 1 was added to all marketing variables prior to the transformation (see previous code block).
+
+```{r Adding control variables, message=FALSE, warning=FALSE, error=FALSE}
+data_clean$periods <- seq_along(data_clean$month)
+data_clean$season <- ifelse(data_clean$month %in% c("December", "January", "February"), "Winter", ifelse(data_clean$month %in% c("March", "April", "May"), "Spring", ifelse(data_clean$month %in% c("June","July","August"), "Summer", ifelse(data_clean$month %in% c("September","October","November"), "Autumn", "NA"))))
+
+data_clean$dummy_spring <- ifelse(data_clean$season == "Spring", 1, 0)
+data_clean$dummy_summer <- ifelse(data_clean$season == "Summer", 1, 0)
+
+data_clean$dummy_winter <- ifelse(data_clean$season == "Winter", 1, 0)
+
+model_print_controls <- lm(ln_sales ~ ln_print + ln_newspap + ln_tvradio + dummy_spring + dummy_summer + dummy_winter + periods, data = data_clean)
+summary(model_print_controls)
+
+ggplot(data_clean, aes(x = season, y = sales, fill = season)) + stat_summary(fun.y = mean, geom = "bar") + stat_summary(fun.data = mean_cl_normal, geom = "errorbar", width = 0.2) + theme(legend.position = "none") + labs(title = "Barplot of Average Sales per Season", x = "Seasons", y = "Sales")
+
+stacked_data_sales_adbudg <- filter(stacked_data, ind == "print" | ind == "sales")
+stacked_data_sales_adbudg$period <- rep(seq(from = 1, to = 76, by = 1), times = 2)
+ggplot(stacked_data_sales_adbudg, aes(x = period, y = values)) + geom_line() + facet_wrap(~ind, nrow = 2, scales = "free") + geom_smooth(method = "lm") + labs(x="Periods", y = "US Dollars")
+```
+
+It can be concluded that the print and the control variables add to the predictive power of the model. The R Square in model 1 is 0.423 and increases to 0.605 by adding the TV/radio and newspaper variables next to the control variables. However, to correct for the inflation of the R-square that occurs when more variables are added to the model, the adjusted R-square should be interpreted as well (Field, 2012). Accordingly, the adjusted R-square shows the same positive trend. In addition, the F-statistic is significant which means that this model is better than using the grand mean of the sales variable as a model.
+
+When examining the coefficients of the variables it can be concluded that only the long-term trend and ln_print variable add to the predictive power of the model. In addition, it can be observed from the barplot that there are not large differences in sales among the seasons.
+
+When assessing the resulting print-sales elasticity, it can be observed that this went down slightly to 0.198, which means that a 1% increase in print advertising spending leads to a 0.198% increase in sales. This elasticity is still very high compared to the elasticities reported in Sethuraman et al. (2011). This finding can be attributed to Omitted Variable Bias, as not all possible confounding variables were controlled for in this analysis.
+
+In addition, the relationship between the trend in print advertising spending and sales is depicted. This figure suggests that print has an effect on sales, which confirms our findings above. Also, it can be observed that as print advertising spending increases, sales increase without any visible lag. This lack in a lagged response of the effect of print advertising on sales will be investigated further below.
+
+###Adding dynamics
+
+It is unlikely that the payoff of an investment in advertising is limited to the same time period. Therefore, dynamics need to be added to the model in the form of leads, lags, or an adstock variable. 
+
+Adding leads to the model would not make sense: this would imply that people are expecting advertising in one of the following weeks and are thus postponing their purchases accordingly. (in class you can add that this does not make sense for advertising, but it would make sense for e.g. price promotions).
+Adding lags, in contrast, does make sense, and actually needs to be done to fully capture the impact of advertising. If we would not add lags to a model, this would imply that advertising effects are only limited to the same week. We would expect advertising to have a longer-lasting effect (because  it creates awareness, it makes brands top of mind etc). Therefore, we have to capture this with lags.
+
+The adstock variable captures the “stock of advertising” at a certain point in time, taking into account advertising at time t and the fact that some of the advertising of the previous weeks still remains in the head of the consumers. The alpha measures the effect on adstock of the current advertising. 1- alpha accounts for the part of advertising in the past that is carried over to the next weeks. Alpha should be between 0 and 1. If alpha=1, this means that all adstock comes from current advertising advertising and that no advertising is carried over to the next weeks. If alpha is 0, this means that all advertising stock comes from previous advertising expenditures and that advertising only has an effect in the future weeks. With adstock we are thus capturing lagged effects of advertising.
+
+
+```{r Adding dynamics, warning=FALSE, message=FALSE, error=FALSE}
+data_clean$print_lag1 <- lag(data_clean$ln_print, n=1)
+data_clean$print_lag2 <- lag(data_clean$ln_print, n=2)
+
+
+
+
+model_print_controls_dynamics <- lm(ln_sales ~ ln_print + ln_newspap + ln_tvradio + dummy_spring + dummy_summer + dummy_winter + periods + print_lag1, data = data_clean)
+summary(model_print_controls_dynamics)
+
+library(XLConnect)
+adstock_workbook <- loadWorkbook("adstock variables.xlsx")
+adstock_worksheet <- readWorksheet(adstock_workbook, sheet = 1)
+colnames(adstock_worksheet) <- gsub("X", "Alpha", colnames(adstock_worksheet))
+data_clean <- cbind(data_clean, adstock_worksheet[2:77, 3:12])
+
+model_print_controls_dynamics <- lm(ln_sales ~ Alpha0.8 + ln_newspap + ln_tvradio + dummy_spring + dummy_summer + dummy_winter + periods, data = data_clean)
+summary(model_print_controls_dynamics)
+
+model_print_controls_dynamics <- lm(ln_sales ~ Alpha0.9 + ln_newspap + ln_tvradio + dummy_spring + dummy_summer + dummy_winter + periods, data = data_clean)
+summary(model_print_controls_dynamics)
+
+
+
+```
+Based on the output it can be concluded that a 1-month lag is insignificant and it is therefore unnecessary to explore adding more lag variables to the model as advertising of the previous month does not seem to carry over to the next month. 
+
+For the model, alpha=0.9  gives the best fit. This means that prior advertising only plays a small role in the current sales, in line with the finding that one lag in advertising is already not significant. The R2 values drop every time we lower alpha, which is in line with this lack of dynamics.
+
+In conclusion, the best model to estimate print advertising elasticities is the last model which contains all marketing variables, control variables and the adstock (alpha=0.9) variable.
+
+
